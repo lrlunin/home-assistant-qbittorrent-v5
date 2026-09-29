@@ -1,0 +1,32 @@
+# qBittorrent API v5
+[![Last release version](https://img.shields.io/github/v/release/lrlunin/hacs-qbittorrent-api-v5)](https://github.com/lrlunin/hacs-qbittorrent-api-v5/releases)
+[![Last release date](https://img.shields.io/github/release-date/lrlunin/hacs-qbittorrent-api-v5)](https://github.com/lrlunin/hacs-qbittorrent-api-v5/releases)
+[![Contributors](https://img.shields.io/github/contributors/lrlunin/hacs-qbittorrent-api-v5)](https://github.com/lrlunin/hacs-qbittorrent-api-v5/graphs/contributors)
+[![Project license](https://img.shields.io/github/license/lrlunin/hacs-qbittorrent-api-v5)](https://github.com/lrlunin/hacs-qbittorrent-api-v5/blob/main/LICENSE)
+![hacs](https://img.shields.io/badge/hacs-standard_installation-darkorange.svg)
+![type](https://img.shields.io/badge/type-custom_component-forestgreen.svg)
+
+Enhanced version of Home Assistant's built-in qBittorrent integration
+
+Adds the following features:
+- Additional sensors showing:
+    * How many torrents are still in 'downloading' state
+    * The longest ETA of all downloading torrents 
+
+- Events can be raised whenever a torrent is added, completed or removed (at the users' choice)
+```yaml
+qbittorrent_api_v5_torrent_complete
+qbittorrent_api_v5_torrent_added
+qbittorrent_api_v5_torrent_removed
+```
+- Four new services:
+    * Pause/resume all torrents, or a specific torrent via an optional hash
+    * Delete a specific torrent, optionally including the associated files as well
+    * Return information on all torrents, or a specific torrent via an optional hash
+    * Shut down the remote qBittorrent client
+
+- Transfer speed limit controls, backed by the `qbittorrent-api` [Application Preferences](https://qbittorrent-api.readthedocs.io/en/latest/apidoc/app.html) and [Transfer](https://qbittorrent-api.readthedocs.io/en/latest/apidoc/transfer.html) endpoints:
+    * `number` entities for the global download and upload limits (KiB/s, `0` = unlimited)
+    * `number` entities for the *alternative* download and upload limits (KiB/s, `0` = unlimited)
+    * A `switch` entity to enable/disable qBittorrent's alternative speed limits mode
+

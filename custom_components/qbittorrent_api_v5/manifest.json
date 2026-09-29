@@ -1,0 +1,11 @@
+{
+  "domain": "qbittorrent_api_v5",
+  "name": "qBittorrent API v5",
+  "codeowners": ["@lrlunin"],
+  "config_flow": true,
+  "documentation": "https://github.com/lrlunin/hacs-qbittorrent-api-v5",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/lrlunin/hacs-qbittorrent-api-v5/issues",
+  "requirements": ["qbittorrent-api==2026.8.1"],
+  "version": "1.6.0"
+}

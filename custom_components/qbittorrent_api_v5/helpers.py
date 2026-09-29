@@ -1,0 +1,233 @@
+"""Helper functions for qbittorrentapi"""
+import qbittorrentapi
+from qbittorrentapi import (
+    Client,
+    APIConnectionError,
+    LoginFailed,
+    HTTPError,
+    Forbidden403Error,
+    InternalServerError500Error,
+    UnsupportedQbittorrentVersion
+    )
+
+from requests.exceptions import (
+    RequestException, 
+    ConnectTimeout
+    )
+
+from .const import *
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+
+all_torrents_prev = []
+
+def setup_client(url: str, username: str, password: str, verify_ssl: bool):
+    # Errors raised will be captured by the calling function
+
+    try:
+        client = qbittorrentapi.Client(host = url, VERIFY_WEBUI_CERTIFICATE = verify_ssl, SIMPLE_RESPONSES = True, REQUESTS_ARGS={'timeout': (3, 5)})
+
+        # Test the provided credentials
+        client.auth_log_in(username = username, password = password)
+
+        return client
+
+    except LoginFailed as ex:
+        raise LoginFailed from ex
+ 
+    except Forbidden403Error as ex:
+        raise Forbidden403Error from ex
+
+    except APIConnectionError as ex:
+        raise APIConnectionError from ex
+
+    except ConnectTimeout as ex:
+        raise ConnectTimeout from ex
+
+    except Exception as ex:
+        raise RequestException from ex 
+
+# Return all torrents in the list
+def find_torrent(torrent_list, default=None):
+    try:
+        for x in torrent_list:
+            return x
+    except:
+        return default
+
+# Return a specific torrent attribute or an empty string
+def get_detail(torrent, attribute):
+    try:
+        value = torrent[attribute]
+
+    except Exception as err:
+        return ""
+    
+    return value
+    
+# Return the version of the remote client
+def get_version(client: Client):
+    try:
+        return client.app.version
+
+    except:
+        return None
+
+# Compare the list of torrents with the last check, looking for newly added, removed and completed torrents
+def compare_torrents(client: Client):
+    #Return a list containing all changed torrents and their new state
+    global all_torrents_prev
+    
+    completed_torrents= []
+    added_torrents= []
+    removed_torrents = []
+
+    #Retrieve current torrent info    
+    all_torrents = client.torrents_info()
+
+    #Cater for a fresh startup - we don't want to raise a ton of events straight away
+    if all_torrents_prev:
+        for torrent in all_torrents_prev:
+            #See if each torrent is still in the new list
+            #If not, it's been deleted
+            #If so, check the completion_on value - has it finished?
+            prev_name = torrent['name']
+            prev_hash = torrent['hash']
+            prev_completion_on = torrent['completion_on']
+
+            found_torrent = find_torrent(x for x in all_torrents if x['hash'] == prev_hash)
+            if found_torrent is not None:
+                if found_torrent['completion_on'] != prev_completion_on:
+
+                    #See if it's just completed downloading
+                    if found_torrent['completion_on'] > 0:
+                        #It's just finished downloading
+                        completed_torrents.append (found_torrent)
+
+            else:
+                removed_torrents.append(torrent)
+
+        for torrent in all_torrents:
+            #See if any new torrents have been added - it won't be in the previous list
+            name = torrent['name']
+            hash = torrent['hash']
+
+            new_torrent = find_torrent(x for x in all_torrents_prev if x['hash'] == hash)
+            if new_torrent is None:
+                added_torrents.append(torrent)
+
+    all_torrents_prev = all_torrents
+ 
+    return completed_torrents, added_torrents, removed_torrents
+
+# Pause the targeted torrent(s)
+def pause_downloads(client: Client, hash: str):
+    if hash != '' and hash != 'all':
+        try:
+            client.torrents_pause(hash)
+
+        except Exception as err:
+            LOGGER.warn(f"Unable to pause torrent '{hash}'")
+    else:
+        client.torrents_pause('all')
+    
+
+# Resume the targeted torrent(s)
+def resume_downloads(client: Client, hash: str):
+    if hash != '' and hash != 'all':
+        try:
+            client.torrents_resume(hash)
+
+        except Exception as err:
+            LOGGER.warn(f"Unable to resume torrent '{hash}'")
+    else:
+        client.torrents_resume('all')
+    
+
+# Delete the targeted torrent
+def delete_torrent(client: Client, hash: str, delete_files: bool):
+    if hash is not None:
+        try:
+            client.torrents_delete(delete_files, hash)
+
+        except Exception as err:
+            LOGGER.warn(f"Unable to delete torrent '{hash}'")
+
+# Return an array of torrent information based on the provided criteria
+def get_torrent_info(client: Client, hash: str = None, status_filter: str = "all"):
+    if hash == "" or hash == "all":
+        hash = None
+
+    try:
+        torrents = client.torrents_info(torrent_hashes = hash, status_filter = status_filter, SIMPLE_RESPONSES = True)
+
+        return {
+            "torrents": [
+                {
+                    "hash": get_detail(torrent, "hash"),
+                    "name": get_detail(torrent, "name"),
+                    "addition_date": get_detail(torrent, "added_on"),
+                    "completion_date": get_detail(torrent, "completion_on"),
+                    "eta": get_detail(torrent, "eta"),
+                    "save_path": get_detail(torrent, "save_path"),
+                    "seeds": get_detail(torrent, "num_seeds"),
+                    "state": get_detail(torrent, "state"),
+                    "category": get_detail(torrent, "category"),
+                    "tags": get_detail(torrent, "tags"),
+                    "total_downloaded": get_detail(torrent, "completed"),
+                    "total_size": get_detail(torrent, "size")
+                } for torrent in torrents
+            ],
+        }
+
+    except Exception as err:
+            LOGGER.warn(f"Unable to get info for torrent '{hash}' with status_filter {status_filter}")
+
+            return {}
+
+# Attempt to shut down the remote client
+def shutdown(client: Client):
+    try:
+        client.app.shutdown()
+
+    except Exception as err:
+        LOGGER.error(err)
+
+# Return the current value (in KiB/s) of a speed limit preference, treating qBittorrent's
+# "no limit" sentinel (0 or a negative value) as 0 for display purposes.
+# qBittorrent reports these preferences in bytes/s
+def get_speed_limit(client: Client, preference_key: str):
+    try:
+        value = client.app_preferences().get(preference_key, 0)
+
+        return value // BYTES_PER_KIBIBYTE if value > 0 else 0
+
+    except Exception as err:
+        LOGGER.warning(f"Unable to retrieve preference '{preference_key}': {err}")
+        return None
+
+# Set a speed limit preference (in KiB/s, sent to qBittorrent in bytes/s); a value of 0 is sent as -1 ("no limit")
+def set_speed_limit(client: Client, preference_key: str, value: int):
+    try:
+        client.app_set_preferences({preference_key: value * BYTES_PER_KIBIBYTE if value > 0 else UNLIMITED_SPEED_VALUE})
+
+    except Exception as err:
+        LOGGER.warning(f"Unable to set preference '{preference_key}' to '{value}': {err}")
+
+# Return whether qBittorrent is currently using its alternative speed limits
+def get_alternative_speed_limits_enabled(client: Client):
+    try:
+        return client.transfer_speed_limits_mode() == "1"
+
+    except Exception as err:
+        LOGGER.warning(f"Unable to retrieve alternative speed limits mode: {err}")
+        return None
+
+# Enable or disable qBittorrent's alternative speed limits
+def set_alternative_speed_limits_enabled(client: Client, enabled: bool):
+    try:
+        client.transfer_set_speed_limits_mode(intended_state=enabled)
+
+    except Exception as err:
+        LOGGER.warning(f"Unable to set alternative speed limits mode to '{enabled}': {err}")
